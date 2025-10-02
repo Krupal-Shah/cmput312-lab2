@@ -1,37 +1,33 @@
 #!/usr/bin/env python3
 import variables as v
+import utils as ut
 from ev3dev2.motor import SpeedDPS
 from time import sleep
 import math
 
-
-def get_end_effector_position(angle1, angle2):
-    h_matrix = [
-        [math.cos(math.radians(angle1 + angle2)), -math.sin(math.radians(angle1 + angle2)),
-         v.l1 * math.cos(math.radians(angle1)) + v.l2 * math.cos(math.radians(angle1 + angle2))],
-        [math.sin(math.radians(angle1 + angle2)), math.cos(math.radians(angle1 + angle2)), v.l1 *
-         math.sin(math.radians(angle1)) + v.l2 * math.sin(math.radians(angle1 + angle2))],
-        [0, 0, 1]
-    ]
-    return (h_matrix[0][2], h_matrix[1][2])
+def evalRobot2D(theta):
+    x = v.l1*math.cos(theta[0]) + v.l2*math.cos(theta[0]+theta[1])
+    y = v.l1*math.sin(theta[0]) + v.l2*math.sin(theta[0]+theta[1])
+    return [x, y]
 
 
 # Part b
-angle1 = 0  # Define in degrees
-angle2 = 90  # Define in degrees
-speed = 50
+angle1 = 45    # degrees
+angle2 = 90     # degrees
+speed = 50      # degrees per second
 
+# Reset motor positions
 v.link_1_motor.reset()
 v.link_2_motor.reset()
 
-v.link_1_motor.on_for_degrees(SpeedDPS(speed), -angle1)
-v.link_2_motor.on_for_degrees(SpeedDPS(speed), angle2)
+ut.move_to_angles(speed, [-angle1, angle2])
 
-sleep(1)
 v.link_1_motor.off()
 v.link_2_motor.off()
 
-end_effector_pos = get_end_effector_position(angle1, angle2)
+theta = [math.radians(angle1), math.radians(angle2)]
+end_effector_pos = evalRobot2D(theta)
+
 print("End Effector Position: ", end_effector_pos)
 
 ###################################################
@@ -45,8 +41,8 @@ print("End Effector Position: ", end_effector_pos)
 #         angle1 = -v.link_1_motor.position
 #         angle2 = v.link_2_motor.position
 #         print("Angles Recorded: ", angle1, angle2)
-#         position = get_end_effector_position(
-#             angle1, angle2)
+#         position = evalRobot2D(
+#             [math.radians(angle1), math.radians(angle2)])
 #         print("Position Recorded: ", position)
 #         positions.append(position)
 
@@ -71,8 +67,8 @@ print("End Effector Position: ", end_effector_pos)
 #     if v.touch_sensor.is_pressed:
 #         angle1 = -v.link_1_motor.position
 #         angle2 = v.link_2_motor.position
-#         position = get_end_effector_position(
-#             angle1, angle2)
+#         position = evalRobot2D(
+#             [math.radians(angle1), math.radians(angle2)])
 #         print("Position Recorded: ", position)
 #         positions.append(position)
 

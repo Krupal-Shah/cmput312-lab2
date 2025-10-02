@@ -1,191 +1,177 @@
 #!/usr/bin/env python3
-import math
 import variables as v
 from ev3dev2.motor import SpeedDPS
-# import matplotlib.pyplot as plt
-# link lengths (meters)
+from time import sleep
+import math
+import random
+import utils as ut
 
-# default speed
-SPEED_DPS = 60
-MAX_ITER = 50
-
-# initial/home position
-X_HOME = v.l1 + v.l2
-Y_HOME = 0
-
-m1 = v.link_1_motor
-m2 = v.link_2_motor
-
-m1.reset()
-m2.reset()
+# ------------------ Robot functions ------------------ #
 
 
-def fk_2r(theta1, theta2):
-    # elbow
-    x1 = v.l1*math.cos(theta1)
-    y1 = v.l1*math.sin(theta1)
-    # end effector
-    x2 = x1 + v.l2*math.cos(theta1+theta2)
-    y2 = y1 + v.l2*math.sin(theta1+theta2)
-    return (x1, y1), (x2, y2)
+def evalRobot2D(theta):
+    x = v.l1*math.cos(theta[0]) + v.l2*math.cos(theta[0]+theta[1])
+    y = v.l1*math.sin(theta[0]) + v.l2*math.sin(theta[0]+theta[1])
+    return [x, y]
 
 
-def jacobian_2r(theta1, theta2):
-    s1, c1 = math.sin(theta1), math.cos(theta1)
-    s12, c12 = math.sin(theta1+theta2), math.cos(theta1+theta2)
-    return [[-v.l1*s1 - v.l2*s12, -v.l2*s12],
-            [v.l1*c1 + v.l2*c12,  v.l2*c12]]
+def fdJacob(theta, alpha=1e-6):
+    J = [[0, 0], [0, 0]]
+    f1 = evalRobot2D([theta[0]+alpha, theta[1]])
+    f2 = evalRobot2D([theta[0]-alpha, theta[1]])
+    f3 = evalRobot2D([theta[0], theta[1]+alpha])
+    f4 = evalRobot2D([theta[0], theta[1]-alpha])
+
+    J[0][0] = (f1[0]-f2[0])/(2*alpha)
+    J[1][0] = (f1[1]-f2[1])/(2*alpha)
+    J[0][1] = (f3[0]-f4[0])/(2*alpha)
+    J[1][1] = (f3[1]-f4[1])/(2*alpha)
+    return J
+
+# ------------------ Inverse Kinematics ------------------ #
 
 
-def mat2_T(M):
-    return [[M[0][0], M[1][0]],
-            [M[0][1], M[1][1]]]
+def invKin2D(l, theta0, pos, n, mode):
+    tol = 1e-2
+    alpha = 0.3  # damping factor for stability
 
-
-def mat2_mul_vec2(M, v):
-    return [M[0][0]*v[0] + M[0][1]*v[1],
-            M[1][0]*v[0] + M[1][1]*v[1]]
-
-
-def mat2_mul_mat2(A, B):
-    return [[A[0][0]*B[0][0] + A[0][1]*B[1][0],
-             A[0][0]*B[0][1] + A[0][1]*B[1][1]],
-            [A[1][0]*B[0][0] + A[1][1]*B[1][0],
-             A[1][0]*B[0][1] + A[1][1]*B[1][1]]]
-
-
-def mat2_inv(M):
-    det = M[0][0]*M[1][1] - M[0][1]*M[1][0]
-    if abs(det) < 1e-9:
+    # Workspace check
+    if ut.norm(pos) > sum(l):
+        print("Target unreachable: outside workspace")
         return None
-    inv_det = 1.0/det
-    return [[M[1][1]*inv_det, -M[0][1]*inv_det],
-            [-M[1][0]*inv_det,  M[0][0]*inv_det]]
 
+    if mode == 0:  # Newton
+        for k in range(n):
+            J = fdJacob(l, theta0)
+            xk = evalRobot2D(theta0)
+            fk = ut.vec_sub(pos, xk)
 
-def vec2_norm(v):
-    return math.sqrt(v[0]*v[0] + v[1]*v[1])
-
-
-def get_current_joint_angles():
-    j1_deg = m1.position
-    j2_deg = m2.position
-    return [math.radians(j1_deg), math.radians(j2_deg)]
-
-
-def goto_joint_angles(theta1, theta2, speed_dps=SPEED_DPS):
-    j1_deg = math.degrees(theta1)
-    j2_deg = math.degrees(theta2)
-    m1_deg = -j1_deg
-    m2_deg = j2_deg
-    m1.on_for_degrees(SpeedDPS(speed_dps), m1_deg)
-    m2.on_for_degrees(SpeedDPS(speed_dps), m2_deg)
-
-
-def clamp_to_workspace(x, y):
-    r = math.hypot(x, y)
-    rmin = abs(v.l1 - v.l2) + 1e-4
-    rmax = (v.l1 + v.l2) - 1e-4
-    if r < 1e-9:
-        return (rmin, 0.0)
-    if r < rmin:
-        s = rmin / r
-        return (x*s, y*s)
-    if r > rmax:
-        s = rmax / r
-        return (x*s, y*s)
-    return (x, y)
-
-
-def line_waypoints(start, goal, max_step=0.02):
-    dx, dy = goal[0]-start[0], goal[1]-start[1]
-    dist = math.hypot(dx, dy)
-    if dist <= max_step:
-        return [goal]
-    n = int(math.ceil(dist/max_step))
-    return [(start[0] + (i/n)*dx, start[1] + (i/n)*dy) for i in range(1, n+1)]
-
-
-def move_to_xy(x_target, y_target):
-    x_target, y_target = clamp_to_workspace(x_target, y_target)
-    theta = get_current_joint_angles()
-    xy_start = (X_HOME, Y_HOME)
-    if abs(theta[0]) < 1e-6 and abs(theta[1]) < 1e-6:
-        # small bend to avoid singularity
-        theta = [math.radians(1), math.radians(1)]
-
-    waypoints = line_waypoints(xy_start, (x_target, y_target), max_step=0.02)
-    for wp in waypoints:
-        for _ in range(MAX_ITER):
-            xy = fk_2r(theta[0], theta[1])
-            e = [wp[0]-xy[1][0], wp[1]-xy[1][1]]
-            if vec2_norm(e) < 1e-3:
+            if ut.norm(fk) < tol:
+                print(
+                    "Newton converged in %d steps, error" % (ut.norm(fk)))
                 break
 
-            J = jacobian_2r(theta[0], theta[1])
-            J_inv = mat2_inv(J)
-            if J_inv is None:
-                print("Singular Jacobian at waypoint", wp)
-                break
+            invJ = ut.mat_inv(J)
+            sk = ut.mat_vec_mul(invJ, fk)
+            theta0 = ut.vec_add(theta0, ut.vec_scale(
+                sk, alpha))  # damped update
+        return theta0
 
-            dtheta = mat2_mul_vec2(J_inv, e)
-            theta[0] += dtheta[0]
-            theta[1] += dtheta[1]
+    elif mode == 1:  # Algebraic
+        if pos == [0, 0]:
+            pos = [1e-6, 0]  # avoid singularity
 
-            print("Waypoint: ", wp, " angle: ", theta)
-
-        # send robot to this waypoint solution
-        goto_joint_angles(theta[0], theta[1])
-
-# def simulate_to_xy(x_target, y_target):
-#     # 0) clamp target
-#     x_target,y_target = clamp_to_workspace(x_target,y_target)
-
-#     # 1) start at home (straight arm along +x)
-#     theta=[5*DEG, -5*DEG]
-#     (_, _), (xe,ye) = fk_2r(theta[0],theta[1])
-#     # xy_start=(xe,ye)
-#     xy_start = (X_HOME, Y_HOME)
-
-#     # 2) build waypoints
-#     waypoints=line_waypoints(xy_start,(x_target,y_target),max_step=0.02)
-
-#     # 3) prepare plot
-#     fig,ax=plt.subplots()
-#     ax.set_aspect('equal')
-#     ax.set_xlim(-0.2,0.2); ax.set_ylim(-0.05,0.2)
-
-#     traj=[xy_start]
-
-#     # 4) solve for each waypoint (just like your loop)
-#     for wp in waypoints:
-#         for _ in range(MAX_ITER):
-#             (_, _),(xe,ye)=fk_2r(theta[0],theta[1])
-#             e=[wp[0]-xe, wp[1]-ye]
-#             if vec2_norm(e)<1e-3: break
-#             J=jacobian_2r(theta[0],theta[1]); J_inv=mat2_inv(J)
-#             if J_inv is None:
-#                 print("Singular Jacobian at",wp)
-#                 break
-#             dtheta=mat2_mul_vec2(J_inv,e)
-#             theta[0]+=dtheta[0]; theta[1]+=dtheta[1]
-#         # after solving this waypoint, draw arm
-#         (x1,y1),(xe,ye)=fk_2r(theta[0],theta[1])
-#         ax.plot([0,x1,xe],[0,y1,ye],'o-',alpha=0.5)
-#         traj.append((xe,ye))
-
-#     # plot full end-effector trajectory
-#     xs=[p[0] for p in traj]; ys=[p[1] for p in traj]
-#     ax.plot(xs,ys,'r--',label="end effector path")
-#     ax.legend(); plt.show()
-
-# Example
+        x, y = pos[0], pos[1]
+        theta2 = math.acos(
+            (x**2 + y**2 - l[0]**2 - l[1]**2) / (2 * l[0] * l[1]))
+        k1 = l[0] + l[1] * math.cos(theta2)
+        k2 = l[1] * math.sin(theta2)
+        theta1 = math.atan2(y, x) - math.atan2(k2, k1)
+        return [theta1, theta2]
 
 
-def main():
-    # simulate_to_xy(0.0,0.20)
-    move_to_xy(11.5, 7.0)
+# ------------------ Main Code ------------------ #
+pos = [x, y] = 0, -18.5
+speed = 50
+theta0 = [math.radians(10), math.radians(-10)]
+
+v.link_1_motor.reset()
+v.link_2_motor.reset()
+
+# curr_x, curr_y = evalRobot2D(
+#     [math.radians(v.link_1_motor.position), math.radians(v.link_2_motor.position)])
+# print("Current Position: ", curr_x, curr_y)
+
+# theta0 = [math.radians(v.link_1_motor.position),
+#           math.radians(v.link_2_motor.position)]
+mode = 1    # 0: Newton, 1: Broyden
+n = 25      # max iterations
+
+# Inverse Kinematics (Newton)
+theta1, theta2 = invKin2D([v.l1, v.l2], theta0, pos, n, 0)
+# Need to negate theta1 for motor direction
+theta1, theta2 = -math.degrees(theta1), math.degrees(theta2)
+
+print("For position %.2f %.2f, moving link1 %.2f and link2 %.2f" %
+      (x, y, theta1, theta2))
+
+x_check, y_check = evalRobot2D(
+    [math.radians(-theta1), math.radians(theta2)])
+print("Check: x=%.2f, y=%.2f" % (x_check, y_check))
+
+# Move the motors
+v.link_1_motor.on_to_position(SpeedDPS(speed), theta1)
+v.link_2_motor.on_to_position(SpeedDPS(speed), theta2)
+
+sleep(1)
+v.link_1_motor.off()
+v.link_2_motor.off()
 
 
-if __name__ == "__main__":
-    main()
+# Inverse Kinematics (Algebraic)
+# pos = [x, y] = 18.5, 0
+# theta0 = [math.radians(-theta1), math.radians(theta2)]
+# theta1_, theta2_ = invKin2D([v.l1, v.l2], theta0, pos, n, 0)
+# theta1_ = -math.degrees(theta1_)
+# theta2_ = math.degrees(theta2_)
+
+# print("For position %.2f %.2f, moving link1 %.2f and link2 %.2f" %
+#       (x, y, theta1_, theta2_))
+
+
+# x_check_, y_check_ = evalRobot2D(
+#     [math.radians(-theta1_), math.radians(theta2_)])
+# print("Check: x=%.2f, y=%.2f" % (x_check_, y_check_))
+
+# v.link_1_motor.on_to_position(SpeedDPS(speed), theta1_)
+# v.link_2_motor.on_to_position(SpeedDPS(speed), theta2_)
+
+# Move to midpoint
+# positions = []
+# print("Press the touch sensor to record positions")
+# while True:
+#     if v.touch_sensor.is_pressed:
+#         angle1 = -v.link_1_motor.position
+#         angle2 = v.link_2_motor.position
+#         print("Angles Recorded: ", angle1, angle2)
+#         position = evalRobot2D(
+#             [math.radians(angle1), math.radians(angle2)])
+#         print("Position Recorded: ", position)
+#         positions.append(position)
+
+#     if len(positions) == 2:
+#         break
+
+#     sleep(0.2)
+
+# x1, y1 = positions[0]
+# x2, y2 = positions[1]
+# midpoint = [(x1 + x2)/2, (y1 + y2)/2]
+# print("Midpoint: ", midpoint)
+
+# # Using Algebraic method to go to midpoint
+# theta0 = [math.radians(v.link_1_motor.position),
+#           math.radians(v.link_2_motor.position)]
+# theta1_m, theta2_m = invKin2D([v.l1, v.l2], theta0, midpoint, n, 1)
+# theta1_m = -math.degrees(theta1_m)
+# theta2_m = math.degrees(theta2_m)
+# print("Moving to midpoint, link1: %.2f, link2: %.2f" %
+#       (theta1_m, theta2_m))
+# v.link_1_motor.on_for_degrees(SpeedDPS(speed), theta1_m)
+# v.link_2_motor.on_for_degrees(SpeedDPS(speed), theta2_m)
+
+# Using Newton method to go to midpoint
+# theta0 = [math.radians(v.link_1_motor.position),
+#           math.radians(v.link_2_motor.position)]
+# theta1_m, theta2_m = invKin2D([v.l1, v.l2], theta0, midpoint, n, 0)
+# theta1_m = -math.degrees(theta1_m)
+# theta2_m = math.degrees(theta2_m)
+# print("Moving to midpoint, link1: %.2f, link2: %.2f" %
+#       (theta1_m, theta2_m))
+# v.link_1_motor.on_for_degrees(SpeedDPS(speed), theta1_m)
+# v.link_2_motor.on_for_degrees(SpeedDPS(speed), theta2_m
+
+# Final cleanup
+# sleep(1)
+# v.link_1_motor.off()
+# v.link_2_motor.off()
