@@ -6,8 +6,8 @@ from ev3dev2.motor import LargeMotor, OUTPUT_A, OUTPUT_B
 from ev3dev2.sensor.lego import TouchSensor
 from ev3dev2.sensor import INPUT_1
 
-import inv_test
-import inv
+import inv_kine_analytical
+import inv_kine_newtons
 
 MODE = 2
 # 1 for analytical and 2 for newton's 
@@ -85,11 +85,14 @@ def main():
     print("Point 2:", p2)
     print("Midpoint:", mid_x,"mm", mid_y, "mm")
 
-    
+    if MODE == 1:
+        # analytical method
+        # todo add the final pos to analytical
+        inv_kine_analytical.move_to_xy(mid_x,mid_y)
+        
     if MODE == 2:
         # newton's method
-        # todo: fix units, make them consistent accross all programs
-        inv.move_to_xy(mid_x,mid_y)
+        inv_kine_newtons.move_to_xy(mid_x,mid_y, p2[0], p2[1])
 
 if __name__ == "__main__":
     main()
