@@ -96,6 +96,7 @@ def invKin2D(pos, n, mode, start_x=None, start_y=None):
 
         # return ut.to_degrees(theta0)
         pos = to_mm(pos)
+        print(pos)
         move_to_xy(pos[0], pos[1], start_x, start_y)
 
     elif mode == 1:  # Analytical Method
@@ -162,7 +163,7 @@ def invKin2D(pos, n, mode, start_x=None, start_y=None):
 
 
 def main():
-    mode = 0        # 0: Moving to positon, 1: Midpoint Calculation
+    mode = 2        # 0: Moving to positon, 1: Midpoint Calculation
     inv_mode = 0    # 0: Newton, 1: Analytical
     n = 25          # max iterations
     pos = [x, y] = 8.7, 18.5     # target position in cm

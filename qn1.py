@@ -3,7 +3,7 @@ import variables as v
 import utils as ut
 import math
 
-mode = 0  # 0: Move to angles, 1: Measure a line, 2: Measure an angle
+mode = 2  # 0: Move to angles, 1: Measure a line, 2: Measure an angle
 speed = 50  # degrees per second
 
 # Reset motor positions
@@ -12,13 +12,13 @@ v.link_2_motor.reset()
 
 if mode == 0:
     print("Mode: Move to angles")
-    angle1 = 10
-    angle2 = 10
+    angle1 = 30
+    angle2 = 50
 
-    [angle1, angle2] = ut.clamp_to_workspace(angle1, angle2)
+    _, [angle1, angle2] = ut.clamp_to_workspace((angle1, angle2))
     ut.move_to_angles(speed, [angle1, angle2])
 
-    theta = [math.radians(angle1), math.radians(angle2)]
+    theta = ut.to_radians((angle1, angle2))
     end_effector_pos = ut.fk_2r(theta)
     print("End Effector Position: ", end_effector_pos)
 
@@ -44,7 +44,7 @@ elif mode == 2:
     det = v1[0]*v2[1] - v1[1]*v2[0]
     theta = math.degrees(math.atan2(det, dot))
     print("Angle between the two lines is: ", abs(theta))
-    
+
 else:
     print("Invalid mode selected")
     exit(1)

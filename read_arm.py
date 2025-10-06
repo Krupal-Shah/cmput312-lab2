@@ -6,17 +6,17 @@ from ev3dev2.motor import LargeMotor, OUTPUT_A, OUTPUT_B
 from ev3dev2.sensor.lego import TouchSensor
 from ev3dev2.sensor import INPUT_1
 
-import inv_kine_analytical
+from qn2 import invKin2D
 import inv_kine_newtons
 
-MODE = 2
-# 1 for analytical and 2 for newton's 
+MODE = 1
+# 1 for analytical and 2 for newton's
 
 L1_MM = 115.0   # upper arm length
 L2_MM = 70.0    # forearm length
 
-M1_PORT = OUTPUT_A   
-M2_PORT = OUTPUT_B   
+M1_PORT = OUTPUT_A
+M2_PORT = OUTPUT_B
 
 # Touch sensor port
 TOUCH_PORT = INPUT_1
@@ -41,6 +41,7 @@ def fk_2r(theta1, theta2, l1_mm, l2_mm):
     x = l1_mm * math.cos(theta1) + l2_mm * math.cos(theta1 + theta2)
     y = l1_mm * math.sin(theta1) + l2_mm * math.sin(theta1 + theta2)
     return x, y
+
 
 def wait_for_press_and_release(ts):
     while not ts.is_pressed:
@@ -83,16 +84,20 @@ def main():
     print("\n--- Results ---")
     print("Point 1:", p1)
     print("Point 2:", p2)
-    print("Midpoint:", mid_x,"mm", mid_y, "mm")
+    print("Midpoint:", mid_x, "mm", mid_y, "mm")
 
     if MODE == 1:
         # analytical method
         # todo add the final pos to analytical
-        inv_kine_analytical.move_to_xy(mid_x,mid_y)
-        
+        mid_x = mid_x / 10
+        mid_y = mid_y / 10
+        mid_point = (mid_x, mid_y)
+        invKin2D(mid_point, 10, 1)
+
     if MODE == 2:
         # newton's method
-        inv_kine_newtons.move_to_xy(mid_x,mid_y, p2[0], p2[1])
+        inv_kine_newtons.move_to_xy(mid_x, mid_y, p2[0], p2[1])
+
 
 if __name__ == "__main__":
     main()
