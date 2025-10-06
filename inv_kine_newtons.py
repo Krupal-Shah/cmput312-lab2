@@ -110,7 +110,7 @@ def line_waypoints(start, goal, max_step=20.0):  # mm per step
     return [(start[0] + (i/n)*dx, start[1] + (i/n)*dy) for i in range(1, n+1)]
 
 
-def choose_newton_seed_for_target(x_goal, y_goal):
+def choose_newton_seed_for_target(x_goal, y_goal, last_seed=None):
     """
     Pure-Newton seeding: try two tiny elbow bends (up vs down) at home,
     pick the one with smaller initial task-space error to the GOAL.
@@ -118,6 +118,11 @@ def choose_newton_seed_for_target(x_goal, y_goal):
     # Two tiny-bend candidates around the singular home pose
     candidates = ([+5*DEG, -5*DEG],   # elbow-up-ish
                   [-5*DEG, +5*DEG])   # elbow-down-ish
+    
+    # Exclude last used seed if provided
+    if last_seed is not None:
+        candidates = [t for t in candidates if t != last_seed]
+
     best_t = None
     best_err = None
     for t in candidates:
@@ -125,6 +130,7 @@ def choose_newton_seed_for_target(x_goal, y_goal):
         e = [x_goal - xy[0], y_goal - xy[1]]
 
         en = vec2_norm(e)
+        # do not pick the last chosen candidate
         if (best_err is None) or (en < best_err):
             best_err = en
             best_t = [t[0], t[1]]
@@ -152,7 +158,11 @@ def move_to_xy(x_target, y_target, start_x=None, start_y=None):
     print("Inverse Kinematics - move arm to (x,y) target (mm)", x_target, y_target)
 
     # start from HOME in workspace; seed elbow branch by goal
+    
     theta = choose_newton_seed_for_target(x_target, y_target)
+    last_seed = theta
+    count = 0
+    
     xy_start = (X_HOME, Y_HOME)
 
     # start_x and start_y will be defined from read_arm 2nd position
@@ -192,59 +202,30 @@ def move_to_xy(x_target, y_target, start_x=None, start_y=None):
         print("clamped, ", clamped)
         if clamped:
             print("Warning: joint limits reached at waypoint", wp)
-            return None
-
-# def simulate_to_xy(x_target, y_target):
-#     # 0) clamp target
-#     x_target,y_target = clamp_to_workspace(x_target,y_target)
-
-#     # 1) start at home (straight arm along +x)
-#     theta=[5*DEG, -5*DEG]
-#     (_, _), (xe,ye) = fk_2r(theta[0],theta[1])
-#     # xy_start=(xe,ye)
-#     xy_start = (X_HOME, Y_HOME)
-
-#     # 2) build waypoints
-#     waypoints=line_waypoints(xy_start,(x_target,y_target),max_step=0.02)
-
-#     # 3) prepare plot
-#     fig,ax=plt.subplots()
-#     ax.set_aspect('equal')
-#     ax.set_xlim(-0.2,0.2); ax.set_ylim(-0.05,0.2)
-
-#     traj=[xy_start]
-
-#     # 4) solve for each waypoint (just like your loop)
-#     for wp in waypoints:
-#         for _ in range(MAX_ITER):
-#             (_, _),(xe,ye)=fk_2r(theta[0],theta[1])
-#             e=[wp[0]-xe, wp[1]-ye]
-#             if vec2_norm(e)<1e-3: break
-#             J=jacobian_2r(theta[0],theta[1]); J_inv=mat2_inv(J)
-#             if J_inv is None:
-#                 print("Singular Jacobian at",wp)
-#                 break
-#             dtheta=mat2_mul_vec2(J_inv,e)
-#             theta[0]+=dtheta[0]; theta[1]+=dtheta[1]
-#         # after solving this waypoint, draw arm
-#         (x1,y1),(xe,ye)=fk_2r(theta[0],theta[1])
-#         ax.plot([0,x1,xe],[0,y1,ye],'o-',alpha=0.5)
-#         traj.append((xe,ye))
-
-#     # plot full end-effector trajectory
-#     xs=[p[0] for p in traj]; ys=[p[1] for p in traj]
-#     ax.plot(xs,ys,'r--',label="end effector path")
-#     ax.legend(); plt.show()
-
-# Example
-
+            # if this was true then try the same again but with the second seed
+            theta = choose_newton_seed_for_target(x_target, y_target, last_seed)
+            last_seed = theta
+            print("Trying again with alternative seed:", [t/DEG for t in theta])
+            # new seed
+            # scale up the theta values
+            theta = [t * 2 for t in theta]
+            goto_joint_angles(theta[0], theta[1])
+            
+            # generate new waypoints from current position to target
+            _, xy = fk_2r(theta[0], theta[1])          # end-effector in mm
+            waypoints = line_waypoints(xy, (x_target, y_target), max_step=5.0)
+            count += 1
+            if count > 2:
+                print("Failed to reach target after 2 reseed attempts.")
+                break
+            
 
 def main():
     print("")
     # test case:
 
     # move_to_xy(X_HOME, Y_HOME)
-    move_to_xy(87, -185)
+    # move_to_xy(87, -185)
     # move_to_xy(115,  80)
     # move_to_xy(115, -80)
     # move_to_xy(135, -40)
@@ -256,7 +237,8 @@ def main():
     # move_to_xy(40, -150)
     # move_to_xy(40, 150)
     # move_to_xy(60, 60)
-
+    # move_to_xy(0,0)
+    move_to_xy(0, 0)
 
 if __name__ == "__main__":
     main()
