@@ -1,3 +1,25 @@
+"""
+Group Members: Krupal Shah & Jaspreet Singh Chhabra
+
+Date: October 8th 2025
+ 
+Brick Number: G20
+
+Lab Number: 2
+
+Problem Number: - (Helper file to store common functions)
+ 
+Brief Program/Problem Description: -
+Brief Solution Summary: -
+
+Used Resources/Collaborators: Lecture slides, EV3Dev2 documentation,
+     OpenAI ChatGPT
+
+I/we hereby certify that I/we have produced the following solution 
+using only the resources listed above in accordance with the 
+CMPUT 312 collaboration policy.
+"""
+
 import math
 import variables as v
 from time import sleep
@@ -5,18 +27,6 @@ from ev3dev2.motor import SpeedDPS
 
 
 ### Math Matrix Utility Functions ###
-def vec_add(a, b):
-    return [a[0] + b[0], a[1] + b[1]]
-
-
-def vec_sub(a, b):
-    return [a[0] - b[0], a[1] - b[1]]
-
-
-def vec_scale(a, s):
-    return [a[0]*s, a[1]*s]
-
-
 def norm(v):
     return math.sqrt(v[0]**2 + v[1]**2)
 
@@ -24,23 +34,6 @@ def norm(v):
 def mat_mul_vec(M, v):
     return [M[0][0]*v[0] + M[0][1]*v[1],
             M[1][0]*v[0] + M[1][1]*v[1]]
-
-
-def mat_add(A, B):
-    return [[A[0][0]+B[0][0], A[0][1]+B[0][1]],
-            [A[1][0]+B[1][0], A[1][1]+B[1][1]]]
-
-
-def mat_mul_mat(A, B):
-    return [[A[0][0]*B[0][0] + A[0][1]*B[1][0],
-             A[0][0]*B[0][1] + A[0][1]*B[1][1]],
-            [A[1][0]*B[0][0] + A[1][1]*B[1][0],
-             A[1][0]*B[0][1] + A[1][1]*B[1][1]]]
-
-
-def outer(u, v):
-    return [[u[0]*v[0], u[0]*v[1]],
-            [u[1]*v[0], u[1]*v[1]]]
 
 
 def det(M):
@@ -55,11 +48,6 @@ def mat_inv(M, damping=1e-6):
             [-M[1][0]/det_,  M[0][0]/det_]]
 
 
-def mat_transpose(M):
-    return [[M[0][0], M[1][0]],
-            [M[0][1], M[1][1]]]
-
-
 def to_degrees(angle):
     return [math.degrees(angle[0]), math.degrees(angle[1])]
 
@@ -69,17 +57,17 @@ def to_radians(angle):
 
 
 ### Robot Kinematics Functions ###
-def fk_2r(theta1, theta2):
+def fk_2r(l, theta1, theta2):
     """Forward kinematics for 2R planar robot."""
-    x = v.l1 * math.cos(theta1) + v.l2 * math.cos(theta1 + theta2)
-    y = v.l1 * math.sin(theta1) + v.l2 * math.sin(theta1 + theta2)
+    x = l[0] * math.cos(theta1) + l[1] * math.cos(theta1 + theta2)
+    y = l[0] * math.sin(theta1) + l[1] * math.sin(theta1 + theta2)
     return x, y
 
 
 def get_current_joint_angles():
     l1_deg = v.link_1_motor.position
-    v.l2_deg = v.link_2_motor.position
-    return [l1_deg, v.l2_deg]
+    l2_deg = v.link_2_motor.position
+    return [l1_deg, l2_deg]
 
 
 def move_to_angles(speed, angle):
@@ -127,8 +115,7 @@ def sample_point():
     theta1_deg = v.link_1_motor.position
     theta2_deg = v.link_2_motor.position
 
-    # Apply sign convention (negated motor 1 if mirrored)
-    theta1 = math.radians(-theta1_deg)
+    theta1 = math.radians(-theta1_deg)  # negated motor 1 as it is mirrored
     theta2 = math.radians(theta2_deg)
 
     x, y = fk_2r(theta1, theta2)
@@ -139,10 +126,3 @@ def sample_point():
     print("End Effector: x =", x, "cm, y =", y, "cm")
 
     return (x, y)
-
-
-def jacobian_2r(theta):
-    s1, c1 = math.sin(theta[0]), math.cos(theta[0])
-    s12, c12 = math.sin(theta[0] + theta[1]), math.cos(theta[0] + theta[1])
-    return [[-v.l1*s1 - v.l2*s12, -v.l2*s12],
-            [v.l1*c1 + v.l2*c12,  v.l2*c12]]

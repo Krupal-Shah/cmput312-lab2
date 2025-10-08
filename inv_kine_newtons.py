@@ -1,8 +1,43 @@
 #!/usr/bin/env python3
+
+"""
+Group Members: Krupal Shah & Jaspreet Singh Chhabra
+
+Date: October 8th 2025
+ 
+Brick Number: G20
+
+Lab Number: 2
+
+Problem Number: 3 (Separate File for Newton's Method but called from lab2_problem3.py)
+ 
+Brief Program/Problem Description:
+    - Implement inverse kinematics for a 2-link robotic arm using both Newton's
+      method.
+
+Brief Solution Summary:
+    - Different seed values considered for elbow up and elbow down positions.
+    - Waypoints generated in a straight line to the target to converge to a solution. (5mm step)
+    - Jacobian matrix calculated and inverted to find change in joint angles.
+    - Clamping of joint angle changes to avoid large swings.
+
+Used Resources/Collaborators:
+    - Lecture slides and notes from CMPUT 312.
+    - Textbook: "Introduction to Robotics: Mechanics and Control" by John J. Craig.
+    - Textbook: "Modeling, Motion Planning, and Control of Manipulators and Mobile Robots"
+        by Akshit Lunia et al.
+    - OpenAI ChatGPT
+
+I/we hereby certify that I/we have produced the following solution 
+using only the resources listed above in accordance with the 
+CMPUT 312 collaboration policy.
+"""
+
 import math
-from ev3dev2.motor import LargeMotor, OUTPUT_A, OUTPUT_B, SpeedDPS
 import utils as ut
-L1, L2 = 115, 70
+import variables as v
+
+L1, L2 = 115, 70        # link lengths in mm
 
 # default speed
 SPEED_DPS = 60
@@ -12,94 +47,16 @@ MAX_ITER = 50
 X_HOME = L1+L2
 Y_HOME = 0
 
-m1 = LargeMotor(OUTPUT_A)
-m2 = LargeMotor(OUTPUT_B)
-
 DEG = math.pi/180.0
 
-m1.reset()
-m2.reset()
-
-print("postion after reset", m1.position, m2.position)  # inital positions
-
-
-def fk_2r(theta1, theta2):
-    # elbow
-    x1 = L1*math.cos(theta1)
-    y1 = L1*math.sin(theta1)
-    # end effector
-    x2 = x1 + L2*math.cos(theta1+theta2)
-    y2 = y1 + L2*math.sin(theta1+theta2)
-    return (x1, y1), (x2, y2)
-
+v.link_1_motor.reset()
+v.link_2_motor.reset()
 
 def jacobian_2r(theta1, theta2):
     s1, c1 = math.sin(theta1), math.cos(theta1)
     s12, c12 = math.sin(theta1+theta2), math.cos(theta1+theta2)
     return [[-L1*s1 - L2*s12, -L2*s12],
             [L1*c1 + L2*c12,  L2*c12]]
-
-
-def mat2_T(M):
-    return [[M[0][0], M[1][0]],
-            [M[0][1], M[1][1]]]
-
-
-def mat2_mul_vec2(M, v):
-    return [M[0][0]*v[0] + M[0][1]*v[1],
-            M[1][0]*v[0] + M[1][1]*v[1]]
-
-
-def mat2_mul_mat2(A, B):
-    return [[A[0][0]*B[0][0] + A[0][1]*B[1][0],
-             A[0][0]*B[0][1] + A[0][1]*B[1][1]],
-            [A[1][0]*B[0][0] + A[1][1]*B[1][0],
-             A[1][0]*B[0][1] + A[1][1]*B[1][1]]]
-
-
-def mat2_inv(M):
-    det = M[0][0]*M[1][1] - M[0][1]*M[1][0]
-    if abs(det) < 1e-9:
-        return None
-    inv_det = 1.0/det
-    return [[M[1][1]*inv_det, -M[0][1]*inv_det],
-            [-M[1][0]*inv_det,  M[0][0]*inv_det]]
-
-
-def vec2_norm(v):
-    return math.sqrt(v[0]*v[0] + v[1]*v[1])
-
-
-def get_current_joint_angles():
-    j1_deg = m1.position
-    j2_deg = m2.position
-    return [j1_deg*DEG, j2_deg*DEG]
-
-
-def goto_joint_angles(theta1, theta2, speed_dps=SPEED_DPS):
-    j1_deg = theta1/DEG
-    j2_deg = theta2/DEG
-    m1_deg = j1_deg
-    m2_deg = j2_deg
-    # added negative since motor is mirrored
-    m1.on_to_position(SpeedDPS(speed_dps), -m1_deg)
-    m2.on_to_position(SpeedDPS(speed_dps), m2_deg)
-
-
-def clamp_to_workspace(x, y):
-    r = math.hypot(x, y)
-    rmin = abs(L1 - L2) + 1e-4
-    rmax = (L1 + L2) - 1e-4
-    if r < 1e-9:
-        return (rmin, 0.0)
-    if r < rmin:
-        s = rmin / r
-        return (x*s, y*s)
-    if r > rmax:
-        s = rmax / r
-        return (x*s, y*s)
-    return (x, y)
-
 
 def line_waypoints(start, goal, max_step=20.0):  # mm per step
     dx, dy = goal[0]-start[0], goal[1]-start[1]
@@ -126,10 +83,10 @@ def choose_newton_seed_for_target(x_goal, y_goal, last_seed=None):
     best_t = None
     best_err = None
     for t in candidates:
-        _, xy = fk_2r(t[0], t[1])
+        _, xy = ut.fk_2r((L1, L2), t[0], t[1])
         e = [x_goal - xy[0], y_goal - xy[1]]
 
-        en = vec2_norm(e)
+        en = ut.norm(e)
         # do not pick the last chosen candidate
         if (best_err is None) or (en < best_err):
             best_err = en
@@ -146,18 +103,8 @@ def clamp_step(dtheta, max_step_deg=10.0):
         dtheta[1] *= s
     return dtheta
 
-
-def to_mm(x, y):
-    if abs(x) < 0.5 and abs(y) < 0.5:
-        return (x*1000.0, y*1000.0)
-    return (x, y)
-
-
-def move_to_xy(x_target, y_target, start_x=None, start_y=None):
-    x_target, y_target = to_mm(x_target, y_target)
+def move_to_xy(x_target, y_target):
     print("Inverse Kinematics - move arm to (x,y) target (mm)", x_target, y_target)
-
-    # start from HOME in workspace; seed elbow branch by goal
     
     theta = choose_newton_seed_for_target(x_target, y_target)
     last_seed = theta
@@ -165,10 +112,6 @@ def move_to_xy(x_target, y_target, start_x=None, start_y=None):
     
     xy_start = (X_HOME, Y_HOME)
 
-    # start_x and start_y will be defined from read_arm 2nd position
-    if start_x and start_y:
-        xy_start = (start_x, start_y)
-    
     print("Starting point", xy_start)
 
     # 5 mm waypoints
@@ -177,18 +120,18 @@ def move_to_xy(x_target, y_target, start_x=None, start_y=None):
     # Newton per waypoint (1 mm tol) + step clamp
     for wp in waypoints:
         for _ in range(MAX_ITER):
-            _, xy = fk_2r(theta[0], theta[1])          # end-effector in mm
+            _, xy = ut.fk_2r((L1, L2), theta[0], theta[1])          # end-effector in mm
             e = [wp[0] - xy[0], wp[1] - xy[1]]        # mm
-            if vec2_norm(e) < 1.0:                     # 1 mm tolerance
+            if ut.norm(e) < 1.0:                     # 1 mm tolerance
                 break
 
             J = jacobian_2r(theta[0], theta[1])
-            J_inv = mat2_inv(J)
+            J_inv = ut.mat_inv(J)
             if J_inv is None:
                 print("Singular Jacobian at waypoint", wp)
                 break
 
-            dtheta = mat2_mul_vec2(J_inv, e)           # rad
+            dtheta = ut.mat_mul_vec(J_inv, e)           # rad
             dtheta = clamp_step(dtheta, max_step_deg=10.0)
 
             theta[0] += dtheta[0]
@@ -197,22 +140,20 @@ def move_to_xy(x_target, y_target, start_x=None, start_y=None):
 
             print("Waypoint:", wp, " Error (mm):", e, " dtheta (rad):", dtheta)
 
-        goto_joint_angles(theta[0], theta[1])
+        ut.move_to_angles(SPEED_DPS, ut.to_degrees(theta))
         clamped, _ = ut.clamp_to_workspace(ut.to_degrees(theta))
-        print("clamped, ", clamped)
         if clamped:
-            print("Warning: joint limits reached at waypoint", wp)
-            # if this was true then try the same again but with the second seed
+            print("\nWarning: joint limits reached at waypoint", wp)
+
             theta = choose_newton_seed_for_target(x_target, y_target, last_seed)
             last_seed = theta
             print("Trying again with alternative seed:", [t/DEG for t in theta])
-            # new seed
-            # scale up the theta values
+
             theta = [t * 2 for t in theta]
-            goto_joint_angles(theta[0], theta[1])
+            ut.move_to_angles(SPEED_DPS, ut.to_degrees(theta))
             
             # generate new waypoints from current position to target
-            _, xy = fk_2r(theta[0], theta[1])          # end-effector in mm
+            _, xy = ut.fk_2r((L1, L2), theta[0], theta[1])          # end-effector in mm
             waypoints = line_waypoints(xy, (x_target, y_target), max_step=5.0)
             count += 1
             if count > 2:
@@ -238,7 +179,6 @@ def main():
     # move_to_xy(40, 150)
     # move_to_xy(60, 60)
     # move_to_xy(0,0)
-    move_to_xy(0, 0)
 
 if __name__ == "__main__":
     main()
